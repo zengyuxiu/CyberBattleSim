@@ -25,6 +25,7 @@ formally defined by:
 """
 
 from datetime import datetime, time
+from hashlib import new
 from typing import NamedTuple, List, Dict, Optional, Union, Tuple, Iterator
 import dataclasses
 from dataclasses import dataclass
@@ -32,12 +33,20 @@ import matplotlib.pyplot as plt  # type:ignore
 from enum import Enum, IntEnum
 import boolean
 import networkx as nx
+from networkx.readwrite import json_graph
+import json
 import yaml
 import random
+
 
 VERSION_TAG = "0.1.0"
 
 ALGEBRA = boolean.BooleanAlgebra()
+# These two lines define True as the dual of False and vice versa
+# it's necessary in order to make sure the simplify function in boolean.py
+# works correctly. See https://github.com/bastikr/boolean.py/issues/82
+ALGEBRA.TRUE.dual = type(ALGEBRA.FALSE)
+ALGEBRA.FALSE.dual = type(ALGEBRA.TRUE)
 
 # Type alias for identifiers
 NodeID = str
@@ -88,7 +97,7 @@ class Rates(NamedTuple):
     successRate: Probability = 1.0
 
 
-class VulnerabilityType(Enum):
+class VulnerabilityType(int, Enum):
     """Is the vulnerability exploitable locally or remotely?"""
     LOCAL = 1
     REMOTE = 2
@@ -183,6 +192,11 @@ class LeakedNodesId(VulnerabilityOutcome):
 
     def __init__(self, nodes: List[NodeID]):
         self.nodes = nodes
+        # copy for frontend value comparison
+        self.nodes_copy = nodes
+
+    def encode(self):
+        return self.__dict__
 
 
 VulnerabilityOutcomes = Union[
@@ -196,7 +210,7 @@ class AttackResult():
     expected_outcome: Union[VulnerabilityOutcomes, None]
 
 
-class Precondition:
+class Precondition(str):
     """ A predicate logic expression defining the condition under which a given
     feature or vulnerability is present or not.
     The symbols used in the expression refer to properties associated with
@@ -214,7 +228,8 @@ class Precondition:
             self.expression = ALGEBRA.parse(expression)
 
 
-class VulnerabilityInfo(NamedTuple):
+@dataclass
+class VulnerabilityInfo():
     """Definition of a known vulnerability"""
     # an optional description of what the vulnerability is
     description: str
@@ -235,6 +250,12 @@ class VulnerabilityInfo(NamedTuple):
     # a string displayed when the vulnerability is successfully exploited
     reward_string: str = ""
 
+    # def encode(self):
+    #     return {name: getattr(self, name) for name in self._fields}
+    # return self._asdict()
+    def encode(self):
+        return dataclasses.asdict(self)
+
 
 # A dictionary storing information about all supported vulnerabilities
 # or features supported by the simulation.
@@ -243,7 +264,7 @@ class VulnerabilityInfo(NamedTuple):
 VulnerabilityLibrary = Dict[VulnerabilityID, VulnerabilityInfo]
 
 
-class RulePermission(Enum):
+class RulePermission(int, Enum):
     """Determine if a rule is blocks or allows traffic"""
     ALLOW = 0
     BLOCK = 1
@@ -318,6 +339,9 @@ class NodeInfo:
     # or its services
     sla_weight: float = 1.0
 
+    def encode(self):
+        return dataclasses.asdict(self)
+
 
 class Identifiers(NamedTuple):
     """Define the global set of identifiers used
@@ -345,7 +369,7 @@ def iterate_network_nodes(network: nx.graph.Graph) -> Iterator[Tuple[NodeID, Nod
 
 class Environment(NamedTuple):
     """ The static graph defining the network of computers """
-    network: nx.DiGraph
+    network: nx.graph.Graph
     vulnerability_library: VulnerabilityLibrary
     identifiers: Identifiers
     creationTime: datetime = datetime.utcnow()
@@ -362,6 +386,23 @@ class Environment(NamedTuple):
         node_info: NodeInfo = self.network.nodes[node_id]['data']
         return node_info
 
+    def get_nodes(self):
+        """Retrieve info for all nodes"""
+        nodes = self.network.nodes
+        edges = self.network.edges
+        data = self.get_data()
+        return json.dumps({"nodes": list(nodes), "edges": list(edges), "data": data}, default=lambda x: x.encode())
+
+    def deserialize(self):
+        serialized = self.get_nodes()
+        deserialized = json.loads(serialized)
+        print(deserialized)
+
+    def get_data(self):
+        nodes = self.network.nodes
+        return {node: nodes[node]["data"] for node in nodes}
+        # return json.dumps(list(self.network.nodes(data=True)))
+
     def plot_environment_graph(self) -> None:
         """Plot the full environment graph"""
         nx.draw(self.network,
@@ -370,6 +411,25 @@ class Environment(NamedTuple):
                             for i, n in
                             self.network.nodes.items()],
                 cmap=plt.cm.Oranges)  # type:ignore
+        print(self.network.nodes)
+        print(self.network.edges)
+
+        # plt.savefig("temp/simple_path.png") # save as png
+        # plt.show() # display
+        # data = json_graph.node_link_data(self.network)
+        # # print(data)
+        # print(json.dumps(data))
+
+    # def get_yaml(self) -> None:
+    #     """Plot the full environment graph"""
+    #     return yaml.safe_dump(self)
+
+    # def get_json(self) -> None:
+    #     """Plot the full environment graph"""
+    #     setup_yaml_serializer()
+    #     data = json.dumps(yaml.safe_load(yaml.dump(self)))
+    #     print(data)
+    #     return data
 
 
 def create_network(nodes: Dict[NodeID, NodeInfo]) -> nx.DiGraph:
@@ -475,9 +535,9 @@ SAMPLE_IDENTIFIERS = Identifiers(
 
 
 def assign_random_labels(
-        graph: nx.DiGraph,
+        graph: nx.Graph,
         vulnerabilities: VulnerabilityLibrary = dict([]),
-        identifiers: Identifiers = SAMPLE_IDENTIFIERS) -> nx.DiGraph:
+        identifiers: Identifiers = SAMPLE_IDENTIFIERS) -> nx.Graph:
     """Create an envrionment network by randomly assigning node information
     (properties, firewall configuration, vulnerabilities)
     to the nodes of a given graph structure"""
@@ -552,6 +612,49 @@ def assign_random_labels(
             graph.nodes[node].update({'data': create_random_node_data(node)})
 
     return graph
+
+
+def update_node(
+        graph: nx.Graph,
+        updated_node: str) -> str:
+    """Changes an envrionment network by randomly assigning node information
+    (properties, firewall configuration, vulnerabilities)
+    to the nodes of a given graph structure"""
+
+    # convert node IDs to string
+    deserialized_node = json.loads(updated_node)
+    # aquire node id from json
+    frontend_node_id = deserialized_node["id"]
+    server_node_id = deserialized_node["serverId"]
+    # retrive node data from graph object
+
+    # update id if it changes
+    print(graph.nodes)
+    if frontend_node_id != server_node_id:
+        graph = nx.relabel_nodes(graph, {server_node_id: frontend_node_id})
+        print("node {} id changed to {}!".format(frontend_node_id, server_node_id))
+    print(graph.nodes)
+
+    node_data = graph.nodes[frontend_node_id].get("data")
+    print(node_data)
+
+    # update value
+    new_value = int(deserialized_node["value"])
+    if node_data.value != new_value and 0 <= new_value <= 100:
+        print("node {} value changed from {} to {}!".format(frontend_node_id, node_data.value, new_value))
+        node_data.value = new_value
+    else:
+        return "value not in range 0 to 100"
+
+    # update services
+    # TODO: handle services
+
+    # update vulnerabilities
+
+    # node_data = deserialized_node[]
+    # node_data = graph.nodes[node].get("data")
+    # node_data.value = value
+    return "node updated"
 
 
 # Serialization
