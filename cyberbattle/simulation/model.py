@@ -37,6 +37,7 @@ from networkx.readwrite import json_graph
 import json
 import yaml
 import random
+random.seed(10)  # same seed for consistency
 
 
 VERSION_TAG = "0.1.0"
@@ -97,10 +98,10 @@ class Rates(NamedTuple):
     successRate: Probability = 1.0
 
 
-class VulnerabilityType(int, Enum):
+class VulnerabilityType(str, Enum):
     """Is the vulnerability exploitable locally or remotely?"""
-    LOCAL = 1
-    REMOTE = 2
+    LOCAL = "LOCAL"
+    REMOTE = "REMOTE"
 
 
 class PrivilegeLevel(IntEnum):
@@ -195,6 +196,9 @@ class LeakedNodesId(VulnerabilityOutcome):
         # copy for frontend value comparison
         self.nodes_copy = nodes
 
+    def __repr__(self):
+        return str(self.encode())
+
     def encode(self):
         return self.__dict__
 
@@ -250,9 +254,6 @@ class VulnerabilityInfo():
     # a string displayed when the vulnerability is successfully exploited
     reward_string: str = ""
 
-    # def encode(self):
-    #     return {name: getattr(self, name) for name in self._fields}
-    # return self._asdict()
     def encode(self):
         return dataclasses.asdict(self)
 
@@ -388,10 +389,8 @@ class Environment(NamedTuple):
 
     def get_nodes(self):
         """Retrieve info for all nodes"""
-        nodes = self.network.nodes
-        edges = self.network.edges
         data = self.get_data()
-        return json.dumps({"nodes": list(nodes), "edges": list(edges), "data": data}, default=lambda x: x.encode())
+        return json.dumps(data, default=lambda x: x.encode())
 
     def deserialize(self):
         serialized = self.get_nodes()
@@ -621,40 +620,69 @@ def update_node(
     (properties, firewall configuration, vulnerabilities)
     to the nodes of a given graph structure"""
 
+    response = {"nodesAdded": [], "nodesRemoved": []}
+
     # convert node IDs to string
-    deserialized_node = json.loads(updated_node)
+    frontend_node = json.loads(updated_node)
     # aquire node id from json
-    frontend_node_id = deserialized_node["id"]
-    server_node_id = deserialized_node["serverId"]
+    frontend_node_id = frontend_node["id"]
+    server_node_id = frontend_node["serverId"]
     # retrive node data from graph object
 
     # update id if it changes
-    print(graph.nodes)
     if frontend_node_id != server_node_id:
         graph = nx.relabel_nodes(graph, {server_node_id: frontend_node_id})
         print("node {} id changed to {}!".format(frontend_node_id, server_node_id))
-    print(graph.nodes)
 
-    node_data = graph.nodes[frontend_node_id].get("data")
-    print(node_data)
+    server_node = graph.nodes[frontend_node_id].get("data")
 
     # update value
-    new_value = int(deserialized_node["value"])
-    if node_data.value != new_value and 0 <= new_value <= 100:
-        print("node {} value changed from {} to {}!".format(frontend_node_id, node_data.value, new_value))
-        node_data.value = new_value
+    new_value = int(frontend_node["value"])
+    if 0 <= new_value <= 100:
+        server_node.value = new_value
     else:
         return "value not in range 0 to 100"
 
     # update services
-    # TODO: handle services
 
     # update vulnerabilities
+    for name, vulnerability in frontend_node["vulnerabilities"].items():
+        server_vulnerabilities = server_node.vulnerabilities[name]
+        # update vulnerability description
+        server_vulnerabilities.description = vulnerability["description"]
+        # check if valid enum value
+        if vulnerability["type"] in set(item.value for item in VulnerabilityType):
+            # update vulnerability type
+            server_vulnerabilities.type = VulnerabilityType(vulnerability["type"])
+        else:
+            return "invalid vulnerability type"
+        # update vulnerability outcomes
+        frontend_outcomes = vulnerability["outcome"]["nodes"]
+        server_outcomes = server_vulnerabilities.outcome.nodes
+        print("frontend: " + str(frontend_outcomes))
+        print("backend: " + str(server_outcomes))
 
-    # node_data = deserialized_node[]
-    # node_data = graph.nodes[node].get("data")
-    # node_data.value = value
-    return "node updated"
+        # check for nodes that should be added to model
+        for outcome in frontend_outcomes:
+            if outcome not in server_outcomes:
+                response["nodesAdded"].append(outcome)
+
+        # check for nodes that should be removed from model
+        for outcome in server_outcomes:
+            if outcome not in frontend_outcomes:
+                response["nodesRemoved"].append(outcome)
+
+        # server_outcomes = frontend_outcomes.copy()
+        graph.nodes[frontend_node_id].get("data").vulnerabilities[name].outcome.nodes = frontend_outcomes.copy()
+
+        print("frontend: " + str(frontend_outcomes))
+        print("backend: " + str(graph.nodes[frontend_node_id].get("data").vulnerabilities[name].outcome.nodes))
+
+    # server_node = frontend_node[]
+    # server_node = graph.nodes[node].get("data")
+    # server_node.value = value
+    print(server_node)
+    return json.dumps(response)
 
 
 # Serialization
