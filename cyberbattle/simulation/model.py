@@ -2,26 +2,26 @@
 # Licensed under the MIT License.
 
 """Data model for the simulation environment.
-
+ 
 The simulation environment is given by the directed graph
 formally defined by:
-
-  Node := NodeID x ListeningService[] x Value x Vulnerability[] x FirewallConfig
-  Edge := NodeID x NodeID x PortName
-
- where:
-  - NodeID: string
-  - ListeningService : Name x AllowedCredentials
-  - AllowedCredentials : string[] # credential pair represented by just a
-    string ID
-  - Value : [0...100]     # Intrinsic value of reaching this node
-  - Vulnerability : VulnerabilityID x Type x Precondition x Outcome x Rates
-  - VulnerabilityID : string
-  - Rates : ProbingDetectionRate x ExploitDetectionRate x SuccessRate
-  - FirewallConfig: {
-      outgoing :  FirwallRule[]
-      incoming : FirwallRule [] }
-  - FirewallRule: PortName x { ALLOW, BLOCK }
+ 
+ Node := NodeID x ListeningService[] x Value x Vulnerability[] x FirewallConfig
+ Edge := NodeID x NodeID x PortName
+ 
+where:
+ - NodeID: string
+ - ListeningService : Name x AllowedCredentials
+ - AllowedCredentials : string[] # credential pair represented by just a
+   string ID
+ - Value : [0...100]     # Intrinsic value of reaching this node
+ - Vulnerability : VulnerabilityID x Type x Precondition x Outcome x Rates
+ - VulnerabilityID : string
+ - Rates : ProbingDetectionRate x ExploitDetectionRate x SuccessRate
+ - FirewallConfig: {
+     outgoing :  FirwallRule[]
+     incoming : FirwallRule [] }
+ - FirewallRule: PortName x { ALLOW, BLOCK }
 """
 
 from datetime import datetime, time
