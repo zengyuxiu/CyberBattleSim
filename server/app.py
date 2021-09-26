@@ -121,7 +121,9 @@ def get_connect_and_infect():
 @app.route("/api/change_value", methods=['POST'])
 def change_value():
     updated_node = request.form["updatedNode"]
-    return model.update_node(g, updated_node)
+    result = model.update_node(g, updated_node)
+    print(g.nodes(data=True))
+    return result
 
 
 if __name__ == "__main__":

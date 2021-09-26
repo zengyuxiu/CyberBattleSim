@@ -193,8 +193,6 @@ class LeakedNodesId(VulnerabilityOutcome):
 
     def __init__(self, nodes: List[NodeID]):
         self.nodes = nodes
-        # copy for frontend value comparison
-        self.nodes_copy = nodes
 
     def __repr__(self):
         return str(self.encode())
@@ -399,6 +397,7 @@ class Environment(NamedTuple):
 
     def get_data(self):
         nodes = self.network.nodes
+        print({node: nodes[node]["data"] for node in nodes})
         return {node: nodes[node]["data"] for node in nodes}
         # return json.dumps(list(self.network.nodes(data=True)))
 
@@ -616,27 +615,33 @@ def assign_random_labels(
 def update_node(
         graph: nx.Graph,
         updated_node: str) -> str:
-    """Changes an envrionment network by randomly assigning node information
-    (properties, firewall configuration, vulnerabilities)
-    to the nodes of a given graph structure"""
+    """update node in local (server) model based on remote (frontend) model"""
 
     response = {"nodesAdded": [], "nodesRemoved": []}
 
     # convert node IDs to string
     frontend_node = json.loads(updated_node)
     # aquire node id from json
-    frontend_node_id = frontend_node["id"]
+    frontend_node_id = str(frontend_node["name"])
     server_node_id = frontend_node["serverId"]
     # retrive node data from graph object
-
+    print(frontend_node_id)
+    print(server_node_id)
     # update id if it changes
     if frontend_node_id != server_node_id:
-        graph = nx.relabel_nodes(graph, {server_node_id: frontend_node_id})
-        print("node {} id changed to {}!".format(frontend_node_id, server_node_id))
-
+        graph = nx.relabel_nodes(graph, {server_node_id: frontend_node_id}, copy=False)  # in-place modification
+        # update id in outcomes
+        for _, nodeinfo in graph.nodes(data="data"):
+            for vulnerability in nodeinfo.vulnerabilities.values():
+                # replace server id by frontend id
+                for node_index, node in enumerate(vulnerability.outcome.nodes):
+                    if node == server_node_id:
+                        vulnerability.outcome.nodes[node_index] = frontend_node_id
+                        print(vulnerability.outcome.nodes)
+        print("node {} id changed to {}!".format(server_node_id, frontend_node_id))
     server_node = graph.nodes[frontend_node_id].get("data")
 
-    # update value
+    # update value if it changes
     new_value = int(frontend_node["value"])
     if 0 <= new_value <= 100:
         server_node.value = new_value
@@ -645,43 +650,55 @@ def update_node(
 
     # update services
 
-    # update vulnerabilities
-    for name, vulnerability in frontend_node["vulnerabilities"].items():
-        server_vulnerabilities = server_node.vulnerabilities[name]
-        # update vulnerability description
-        server_vulnerabilities.description = vulnerability["description"]
-        # check if valid enum value
-        if vulnerability["type"] in set(item.value for item in VulnerabilityType):
-            # update vulnerability type
-            server_vulnerabilities.type = VulnerabilityType(vulnerability["type"])
+    # update vulnerabilities in local (server) model based on remote (frontend) model
+    for vulnerability in frontend_node["vulnerabilities"].values():
+        frontend_vulnerability_id = vulnerability["id"]
+        server_vulnerability_id = vulnerability["serverId"]
+        # check if vulnerability is new
+        if server_vulnerability_id not in server_node.vulnerabilities:
+            outcomes = vulnerability["outcome"]["nodes"]
+            server_node.vulnerabilities[frontend_vulnerability_id] = VulnerabilityInfo(
+                description=vulnerability["description"],
+                type=VulnerabilityType(vulnerability["type"]),
+                outcome=LeakedNodesId(outcomes))
+            response["nodesAdded"].append(outcomes)
         else:
-            return "invalid vulnerability type"
-        # update vulnerability outcomes
-        frontend_outcomes = vulnerability["outcome"]["nodes"]
-        server_outcomes = server_vulnerabilities.outcome.nodes
-        print("frontend: " + str(frontend_outcomes))
-        print("backend: " + str(server_outcomes))
+            # check if there's a name change
+            if frontend_vulnerability_id != server_vulnerability_id:
+                server_node.vulnerabilities[frontend_vulnerability_id] = server_node.vulnerabilities[server_vulnerability_id]
+                del server_node.vulnerabilities[server_vulnerability_id]
 
-        # check for nodes that should be added to model
-        for outcome in frontend_outcomes:
-            if outcome not in server_outcomes:
-                response["nodesAdded"].append(outcome)
+            server_vulnerabilities = server_node.vulnerabilities[frontend_vulnerability_id]
+            # update vulnerability description
+            server_vulnerabilities.description = vulnerability["description"]
+            # check if valid enum value
+            if vulnerability["type"] in set(item.value for item in VulnerabilityType):
+                # update vulnerability type
+                server_vulnerabilities.type = VulnerabilityType(vulnerability["type"])
+            else:
+                return "invalid vulnerability type"
+            # update vulnerability outcomes
+            frontend_outcomes = vulnerability["outcome"]["nodes"]
+            server_outcomes = server_vulnerabilities.outcome.nodes
 
-        # check for nodes that should be removed from model
-        for outcome in server_outcomes:
-            if outcome not in frontend_outcomes:
-                response["nodesRemoved"].append(outcome)
+            # check for nodes that should be added to model
+            for outcome in frontend_outcomes:
+                if outcome not in server_outcomes:
+                    response["nodesAdded"].append(outcome)
 
-        # server_outcomes = frontend_outcomes.copy()
-        graph.nodes[frontend_node_id].get("data").vulnerabilities[name].outcome.nodes = frontend_outcomes.copy()
+            # check for nodes that should be removed from model
+            for outcome in server_outcomes:
+                if outcome not in frontend_outcomes:
+                    response["nodesRemoved"].append(outcome)
 
-        print("frontend: " + str(frontend_outcomes))
-        print("backend: " + str(graph.nodes[frontend_node_id].get("data").vulnerabilities[name].outcome.nodes))
+            # server_outcomes = frontend_outcomes.copy()
+            server_outcomes.clear()
+            server_outcomes.extend(sorted(frontend_outcomes))
 
     # server_node = frontend_node[]
     # server_node = graph.nodes[node].get("data")
     # server_node.value = value
-    print(server_node)
+    # print(graph.nodes(default=True))
     return json.dumps(response)
 
 
