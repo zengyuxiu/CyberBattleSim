@@ -37,7 +37,7 @@ from networkx.readwrite import json_graph
 import json
 import yaml
 import random
-random.seed(10)  # same seed for consistency
+random.seed(11)  # same seed for consistency
 
 
 VERSION_TAG = "0.1.0"
@@ -129,6 +129,12 @@ class LateralMove(VulnerabilityOutcome):
 class CustomerData(VulnerabilityOutcome):
     """Access customer data on target node"""
 
+    def __repr__(self):
+        return str(self.encode())
+
+    def encode(self):
+        return self.__dict__
+
 
 class PrivilegeEscalation(VulnerabilityOutcome):
     """Privilege escalation outcome"""
@@ -186,6 +192,12 @@ class LeakedCredentials(VulnerabilityOutcome):
 
     def __init__(self, credentials: List[CachedCredential]):
         self.credentials = credentials
+
+    def __repr__(self):
+        return str(self.encode())
+
+    def encode(self):
+        return self.__dict__
 
 
 class LeakedNodesId(VulnerabilityOutcome):
@@ -397,7 +409,6 @@ class Environment(NamedTuple):
 
     def get_data(self):
         nodes = self.network.nodes
-        print({node: nodes[node]["data"] for node in nodes})
         return {node: nodes[node]["data"] for node in nodes}
         # return json.dumps(list(self.network.nodes(data=True)))
 
