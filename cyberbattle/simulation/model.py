@@ -2,13 +2,13 @@
 # Licensed under the MIT License.
 
 """Data model for the simulation environment.
- 
+
 The simulation environment is given by the directed graph
 formally defined by:
- 
+
  Node := NodeID x ListeningService[] x Value x Vulnerability[] x FirewallConfig
  Edge := NodeID x NodeID x PortName
- 
+
 where:
  - NodeID: string
  - ListeningService : Name x AllowedCredentials
@@ -28,7 +28,7 @@ from datetime import datetime, time
 from hashlib import new
 from typing import NamedTuple, List, Dict, Optional, Union, Tuple, Iterator
 import dataclasses
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import matplotlib.pyplot as plt  # type:ignore
 from enum import Enum, IntEnum
 import boolean
@@ -133,7 +133,7 @@ class CustomerData(VulnerabilityOutcome):
         return str(self.encode())
 
     def encode(self):
-        return self.__dict__
+        return {"customer_data": self.__hash__()}
 
 
 class PrivilegeEscalation(VulnerabilityOutcome):
@@ -178,11 +178,15 @@ class ExploitFailed(VulnerabilityOutcome):
     """This is for situations where the exploit fails """
 
 
-class CachedCredential(NamedTuple):
+@dataclass
+class CachedCredential():
     """Encodes a machine-port-credential triplet"""
     node: NodeID
     port: PortName
     credential: CredentialID
+
+    def encode(self):
+        return dataclasses.asdict(self)
 
 
 class LeakedCredentials(VulnerabilityOutcome):
@@ -275,13 +279,14 @@ class VulnerabilityInfo():
 VulnerabilityLibrary = Dict[VulnerabilityID, VulnerabilityInfo]
 
 
-class RulePermission(int, Enum):
+class RulePermission(str, Enum):
     """Determine if a rule is blocks or allows traffic"""
-    ALLOW = 0
-    BLOCK = 1
+    ALLOW = "ALLOW"
+    BLOCK = "BLOCK"
 
 
-class FirewallRule(NamedTuple):
+@dataclass
+class FirewallRule():
     """A firewall rule"""
     # A port name
     port: PortName
@@ -290,8 +295,12 @@ class FirewallRule(NamedTuple):
     # An optional reason for the block/allow rule
     reason: str = ""
 
+    def encode(self):
+        return dataclasses.asdict(self)
 
-class FirewallConfiguration(NamedTuple):
+
+@dataclass
+class FirewallConfiguration():
     """Firewall configuration on a given node.
     Determine if traffic should be allowed or specifically blocked
     on a given port for outgoing and incoming traffic.
@@ -302,16 +311,19 @@ class FirewallConfiguration(NamedTuple):
     are assumed to be blocked. (Adding an explicit block rule
     can still be useful to give a reason for the block.)
     """
-    outgoing: List[FirewallRule] = [
+    outgoing: List = field(default_factory=lambda: [
         FirewallRule("RDP", RulePermission.ALLOW),
         FirewallRule("SSH", RulePermission.ALLOW),
         FirewallRule("HTTPS", RulePermission.ALLOW),
-        FirewallRule("HTTP", RulePermission.ALLOW)]
-    incoming: List[FirewallRule] = [
+        FirewallRule("HTTP", RulePermission.ALLOW)])
+    incoming: List = field(default_factory=lambda: [
         FirewallRule("RDP", RulePermission.ALLOW),
         FirewallRule("SSH", RulePermission.ALLOW),
         FirewallRule("HTTPS", RulePermission.ALLOW),
-        FirewallRule("HTTP", RulePermission.ALLOW)]
+        FirewallRule("HTTP", RulePermission.ALLOW)])
+
+    def encode(self):
+        return dataclasses.asdict(self)
 
 
 class MachineStatus(Enum):
@@ -332,11 +344,11 @@ class NodeInfo:
     value: NodeValue = 0
     # Properties of the nodes, some of which can imply further vulnerabilities
     properties: List[PropertyName] = dataclasses.field(default_factory=list)
-    # Fireall configuration of the node
+    # Firewall configuration of the node
     firewall: FirewallConfiguration = FirewallConfiguration()
     # Attacker agent installed on the node? (aka the node is 'pwned')
     agent_installed: bool = False
-    # Esclation level
+    # Escalation level
     privilege_level: PrivilegeLevel = PrivilegeLevel.NoAccess
     # Can the node be re-imaged by a defender agent?
     reimagable: bool = True
@@ -420,14 +432,10 @@ class Environment(NamedTuple):
                             for i, n in
                             self.network.nodes.items()],
                 cmap=plt.cm.Oranges)  # type:ignore
-        print(self.network.nodes)
-        print(self.network.edges)
 
         # plt.savefig("temp/simple_path.png") # save as png
         # plt.show() # display
         # data = json_graph.node_link_data(self.network)
-        # # print(data)
-        # print(json.dumps(data))
 
     # def get_yaml(self) -> None:
     #     """Plot the full environment graph"""
@@ -437,7 +445,6 @@ class Environment(NamedTuple):
     #     """Plot the full environment graph"""
     #     setup_yaml_serializer()
     #     data = json.dumps(yaml.safe_load(yaml.dump(self)))
-    #     print(data)
     #     return data
 
 
@@ -628,29 +635,14 @@ def update_node(
         updated_node: str) -> str:
     """update node in local (server) model based on remote (frontend) model"""
 
-    response = {"nodesAdded": [], "nodesRemoved": []}
-
     # convert node IDs to string
     frontend_node = json.loads(updated_node)
-    # aquire node id from json
-    frontend_node_id = str(frontend_node["name"])
-    server_node_id = frontend_node["serverId"]
-    # retrive node data from graph object
-    print(frontend_node_id)
-    print(server_node_id)
-    # update id if it changes
-    if frontend_node_id != server_node_id:
-        graph = nx.relabel_nodes(graph, {server_node_id: frontend_node_id}, copy=False)  # in-place modification
-        # update id in outcomes
-        for _, nodeinfo in graph.nodes(data="data"):
-            for vulnerability in nodeinfo.vulnerabilities.values():
-                # replace server id by frontend id
-                for node_index, node in enumerate(vulnerability.outcome.nodes):
-                    if node == server_node_id:
-                        vulnerability.outcome.nodes[node_index] = frontend_node_id
-                        print(vulnerability.outcome.nodes)
-        print("node {} id changed to {}!".format(server_node_id, frontend_node_id))
-    server_node = graph.nodes[frontend_node_id].get("data")
+
+    # update node name
+    handle_node_name_update(graph, frontend_node)
+
+    node_id = str(frontend_node["name"])
+    server_node = graph.nodes[node_id].get("data")
 
     # update value if it changes
     new_value = int(frontend_node["value"])
@@ -659,61 +651,86 @@ def update_node(
     else:
         return "value not in range 0 to 100"
 
-    # update services
+    # TODO: update services
 
+    # update vulnerabilities
+    handle_vulnerability_update(server_node, frontend_node)
+
+    # server_node = frontend_node[]
+    # server_node = graph.nodes[node].get("data")
+    # server_node.value = value
+    return "updated node"
+
+
+def handle_node_name_update(graph, frontend_node):
+    # aquire node id from json
+    new_node_id = str(frontend_node["name"])
+    old_node_id = frontend_node["serverId"]
+    # retrive node data from graph object
+    print(new_node_id)
+    print(old_node_id)
+    # update id if it changes
+    if new_node_id != old_node_id:
+        graph = nx.relabel_nodes(graph, {old_node_id: new_node_id}, copy=False)  # in-place modification
+        # update id in outcomes
+        for _, nodeinfo in graph.nodes(data="data"):
+            for vulnerability in nodeinfo.vulnerabilities.values():
+                # change name in outcome nodes
+                for node_index, node in enumerate(vulnerability.outcome.nodes):
+                    if node == old_node_id:
+                        vulnerability.outcome.nodes[node_index] = new_node_id
+                # change name in outcome credentials
+                for credential in vulnerability.outcome.credentials:
+                    if credential.node == old_node_id:
+                        credential.node = new_node_id
+        print("node {} id changed to {}!".format(old_node_id, new_node_id))
+
+
+def handle_vulnerability_update(server_node, frontend_node):
     # update vulnerabilities in local (server) model based on remote (frontend) model
     for vulnerability in frontend_node["vulnerabilities"].values():
         frontend_vulnerability_id = vulnerability["id"]
         server_vulnerability_id = vulnerability["serverId"]
         # check if vulnerability is new
         if server_vulnerability_id not in server_node.vulnerabilities:
-            outcomes = vulnerability["outcome"]["nodes"]
-            server_node.vulnerabilities[frontend_vulnerability_id] = VulnerabilityInfo(
-                description=vulnerability["description"],
-                type=VulnerabilityType(vulnerability["type"]),
-                outcome=LeakedNodesId(outcomes))
-            response["nodesAdded"].append(outcomes)
+            handle_new_vulnerability(vulnerability, server_node, server_vulnerability_id)
         else:
             # check if there's a name change
             if frontend_vulnerability_id != server_vulnerability_id:
-                server_node.vulnerabilities[frontend_vulnerability_id] = server_node.vulnerabilities[server_vulnerability_id]
                 del server_node.vulnerabilities[server_vulnerability_id]
 
-            server_vulnerabilities = server_node.vulnerabilities[frontend_vulnerability_id]
-            # update vulnerability description
-            server_vulnerabilities.description = vulnerability["description"]
-            # check if valid enum value
-            if vulnerability["type"] in set(item.value for item in VulnerabilityType):
-                # update vulnerability type
-                server_vulnerabilities.type = VulnerabilityType(vulnerability["type"])
-            else:
-                return "invalid vulnerability type"
-            # update vulnerability outcomes
-            frontend_outcomes = vulnerability["outcome"]["nodes"]
-            server_outcomes = server_vulnerabilities.outcome.nodes
+            # replace with new, updated vulnerability
+            handle_new_vulnerability(vulnerability, server_node, frontend_vulnerability_id)
 
-            # check for nodes that should be added to model
-            for outcome in frontend_outcomes:
-                if outcome not in server_outcomes:
-                    response["nodesAdded"].append(outcome)
 
-            # check for nodes that should be removed from model
-            for outcome in server_outcomes:
-                if outcome not in frontend_outcomes:
-                    response["nodesRemoved"].append(outcome)
+def handle_new_vulnerability(vulnerability, server_node, server_vulnerability_id):
+    frontend_outcome = vulnerability["outcome"]
+    server_outcome = VulnerabilityOutcome()
 
-            # server_outcomes = frontend_outcomes.copy()
-            server_outcomes.clear()
-            server_outcomes.extend(sorted(frontend_outcomes))
+    if "nodes" in frontend_outcome:
+        nodes = frontend_outcome.get("nodes")
+        server_outcome = LeakedNodesId(nodes)
 
-    # server_node = frontend_node[]
-    # server_node = graph.nodes[node].get("data")
-    # server_node.value = value
-    # print(graph.nodes(default=True))
-    return json.dumps(response)
+    elif "credentials" in frontend_outcome:
+        frontend_credentials = frontend_outcome.get("credentials")
+        server_credentials = []
+        for credential in frontend_credentials:
+            new_credential = CachedCredential(node=credential.get("node"),
+                                              port=credential.get("port"),
+                                              credential=credential.get("credential"))
+            server_credentials.append(new_credential)
+        server_outcome = LeakedCredentials(credentials=server_credentials)
 
+    elif "customer_data" in frontend_outcome:
+        server_outcome = CustomerData()
+
+    server_node.vulnerabilities[server_vulnerability_id] = VulnerabilityInfo(
+        description=vulnerability["description"],
+        type=VulnerabilityType(vulnerability["type"]),
+        outcome=server_outcome)
 
 # Serialization
+
 
 def setup_yaml_serializer() -> None:
     """Setup a clean YAML formatter for object of type Environment.
