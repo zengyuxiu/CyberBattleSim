@@ -23,7 +23,7 @@ from cyberbattle.simulation.model import MachineStatus, PrivilegeLevel, Property
 from . import model
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("cyberbattlesim")
 Reward = float
 
 DiscoveredNodeInfo = TypedDict('DiscoveredNodeInfo', {
@@ -81,10 +81,14 @@ class EdgeAnnotation(Enum):
     LATERAL_MOVE = 2
 
 
-class ActionResult(NamedTuple):
+@dataclass
+class ActionResult():
     """Result from executing an action"""
     reward: Reward
     outcome: Optional[model.VulnerabilityOutcome]
+
+    def encode(self):
+        return dataclasses.asdict(self)
 
 
 ALGEBRA = boolean.BooleanAlgebra()
@@ -378,7 +382,7 @@ class AgentActions:
         target_node_info: model.NodeInfo = self._environment.get_node(target_node_id)
 
         if not source_node_info.agent_installed:
-            raise ValueError("Agent does not owned the source node '" + node_id + "'")
+            raise ValueError("Agent does not own the source node '" + node_id + "'")
 
         if target_node_id not in self._discovered_nodes:
             raise ValueError("Agent has not discovered the target node '" + target_node_id + "'")
@@ -415,7 +419,7 @@ class AgentActions:
         node_info = self._environment.get_node(node_id)
 
         if not node_info.agent_installed:
-            raise ValueError(f"Agent does not owned the node '{node_id}'")
+            raise ValueError(f"Agent does not own the node '{node_id}'")
 
         succeeded, result = self.__process_outcome(
             model.VulnerabilityType.LOCAL,
@@ -463,7 +467,7 @@ class AgentActions:
         # and that the target node is discovered
 
         if not source_node.agent_installed:
-            raise ValueError(f"Agent does not owned the source node '{source_node_id}'")
+            raise ValueError(f"Agent does not own the source node '{source_node_id}'")
 
         if target_node_id not in self._discovered_nodes:
             raise ValueError(f"Agent has not discovered the target node '{target_node_id}'")
@@ -579,7 +583,7 @@ class AgentActions:
             for n in self.list_nodes() if n['status'] == 'owned']
         on_discovered_nodes: List[Dict[str, object]] = [{'id': n['id'],
                                                          'status': n['status'],
-                                                         'local_attacks': None,
+                                                         'local_attacks': [],
                                                          'remote_attacks': self.list_remote_attacks(n['id'])}
                                                         for n in self.list_nodes() if n['status'] != 'owned']
         return on_owned_nodes + on_discovered_nodes
