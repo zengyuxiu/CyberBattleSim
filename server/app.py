@@ -1,45 +1,57 @@
-from tabulate import tabulate
-from flask import request
-from flask import Flask
-import cyberbattle._env.cyberbattle_env
-import cyberbattle.simulation.commandcontrol as commandcontrol
-import cyberbattle.simulation.actions as actions
-import cyberbattle.simulation.model as model
-import networkx as nx
-import plotly.offline as plo
-import os
-import sys
-import gym
-import importlib
-import json
-import cyberbattle.samples.toyctf.toy_ctf as toy_ctf
 
-importlib.reload(model)
-importlib.reload(actions)
-importlib.reload(commandcontrol)
+import json
+import logging
+
+from flask import Flask, request
+from LogStream import LogStreamHandler
+
+import cyberbattle.samples.toyctf.toy_ctf as ctf
+import cyberbattle.simulation.commandcontrol as commandcontrol
+import cyberbattle.simulation.model as model
 
 app = Flask(__name__)
 
-
-# g = nx.erdos_renyi_graph(35, 0.05, directed=True)
-# g = model.assign_random_labels(g)
-# env = model.Environment(network=g, vulnerability_library=dict([]), identifiers=model.SAMPLE_IDENTIFIERS)
-env = toy_ctf.new_environment()
-g = model.create_network(toy_ctf.nodes)
-
-
+# network = nx.erdos_renyi_graph(35, 0.05, directed=True)
+# network = model.assign_random_labels(network)
+network = model.create_network(ctf.nodes)
+env = model.Environment(network=network, vulnerability_library=dict([]), identifiers=ctf.ENV_IDENTIFIERS)
 c = commandcontrol.CommandControl(env)
 
 c.plot_nodes()
-print("Nodes disovered so far: " + str(c.list_nodes()))
+# print("Nodes disovered so far: " + str(c.list_nodes()))
 starting_node = c.list_nodes()[0]['id']
 
 dbg = commandcontrol.EnvironmentDebugging(c)
 
 env.plot_environment_graph()
-# print(nx.info(env.network))
 
-# print(tabulate(c.list_all_attacks(), {}))
+# set up logging
+log_stream = LogStreamHandler()
+# configure basic logging with time support
+logging.basicConfig(level=logging.INFO)
+cyberbattle_logger = logging.getLogger("cyberbattlesim")
+cyberbattle_logger.addHandler(log_stream)
+
+# set up reward caching
+cachedRewards = []
+
+
+class Respone():
+    def __init__(self, result, logs) -> None:
+        self.result = result
+        self.logs = logs
+
+    def encode(self):
+        return {"result": self.result, "logs": self.logs, "cachedRewards": cachedRewards}
+
+
+def resetEnvironment():
+    global c, dbg, log_stream, cachedRewards
+    c = commandcontrol.CommandControl(env)
+    dbg = commandcontrol.EnvironmentDebugging(c)
+    log_stream = LogStreamHandler()
+    cyberbattle_logger.addHandler(log_stream)
+    cachedRewards = []
 
 
 @ app.route("/")
@@ -54,19 +66,21 @@ def get_nodes():
     return env.get_nodes()
 
 
-@ app.route("/api/get_data")
-def get_data():
-    return env.get_data()
-
-
 @ app.route("/api/total_reward")
 def get_total_reward():
-    return json.dumps(c.total_reward())
+    result = c.total_reward()
+    # append result if cache is empty or if last reward is different from result
+    if not cachedRewards or cachedRewards[-1] != result:
+        cachedRewards.append(result)
+    response = Respone(result, log_stream)
+    return json.dumps(response, default=lambda x: x.encode())
 
 
-@ app.route("/api/list_discovered_nodes")
-def list_discovered_nodes():
-    return json.dumps(c.list_nodes())
+@ app.route("/api/list_nodes")
+def list_nodes():
+    result = c.list_nodes()
+    response = Respone(result, log_stream)
+    return json.dumps(response, default=lambda x: x.encode())
 
 # TODO: add input
 
@@ -103,28 +117,52 @@ def get_list_attacks():
 
 @ app.route("/api/list_all_attacks")
 def get_list_all_attacks():
-    return json.dumps(c.list_all_attacks())
+    result = c.list_all_attacks()
+    response = Respone(result, log_stream)
+    return json.dumps(response, default=lambda x: x.encode())
+
+
+@ app.route("/api/credentials_gathered_so_far")
+def get_credentials():
+    result = list(c.credentials_gathered_so_far)
+    response = Respone(result, log_stream)
+    return json.dumps(response, default=lambda x: x.encode())
 
 
 @ app.route("/api/run_attack", methods=['POST'])
 def run_attack():
-    node_id = request.form["nodeId"]
+    target_node_id = request.form["targetNodeId"]
     vulnerability_id = request.form["vulnerabilityId"]
-    return json.dumps(c.run_attack(node_id, vulnerability_id), default=lambda x: x.encode())
+    result = c.run_attack(target_node_id, vulnerability_id)
+    response = Respone(result, log_stream)
+    return json.dumps(response, default=lambda x: x.encode())
+
 
 # TODO: add input
 
 
-@ app.route("/api/get_run_remote_attack")
+@ app.route("/api/run_remote_attack", methods=['POST'])
 def run_remote_attack():
-    return json.dumps(c.run_remote_attack())
+    source_node_id = request.form.get("sourceNodeId")
+    target_node_id = request.form["targetNodeId"]
+    vulnerability_id = request.form["vulnerabilityId"]
+    result = c.run_remote_attack(source_node_id, target_node_id, vulnerability_id)
+    response = Respone(result, log_stream)
+    return json.dumps(response, default=lambda x: x.encode())
 
-# TODO: add input
 
-
-@ app.route("/api/get_connect_and_infect")
-def get_connect_and_infect():
-    return json.dumps(c.connect_and_infect())
+@ app.route("/api/connect_and_infect", methods=['POST'])
+def connect_and_infect():
+    source_node_id = request.form.get("sourceNodeId")
+    target_node_id = request.form["targetNodeId"]
+    credential_id = request.form["credentialId"]
+    port_name = request.form["port"]
+    print(source_node_id, target_node_id, port_name, credential_id)
+    print(c.list_attacks("client"))
+    print(c.list_attacks("GitHubProject"))
+    result = c.connect_and_infect(source_node_id, target_node_id, port_name, credential_id)
+    response = Respone(result, log_stream)
+    return json.dumps(response, default=lambda x: x.encode())
 
 # SETTERS
 
@@ -132,8 +170,16 @@ def get_connect_and_infect():
 @ app.route("/api/change_value", methods=['POST'])
 def change_value():
     updated_node = request.form["updatedNode"]
-    result = model.update_node(g, updated_node)
-    print(g.nodes(data=True))
+    result = model.update_node(network, updated_node)
+    resetEnvironment()
+    return result
+
+
+@ app.route("/api/remove_node", methods=['POST'])
+def remove_node():
+    node_id = request.form["nodeToRemove"]
+    result = model.remove_node(network, node_id)
+    resetEnvironment()
     return result
 
 
