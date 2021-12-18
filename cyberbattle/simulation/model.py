@@ -25,7 +25,6 @@ where:
 """
 
 from datetime import datetime, time
-from hashlib import new
 from typing import NamedTuple, List, Dict, Optional, Union, Tuple, Iterator
 import dataclasses
 from dataclasses import dataclass, field
@@ -33,7 +32,6 @@ import matplotlib.pyplot as plt  # type:ignore
 from enum import Enum, IntEnum
 import boolean
 import networkx as nx
-from networkx.readwrite import json_graph
 import json
 import yaml
 import random
@@ -79,6 +77,9 @@ class ListeningService:
     # Weight used to evaluate the cost of not running the service
     sla_weight = 1.0
 
+    def encode(self):
+        return dataclasses.asdict(self)
+
 
 x = ListeningService(name='d')
 VulnerabilityID = str
@@ -91,11 +92,15 @@ Probability = float
 PropertyName = str
 
 
-class Rates(NamedTuple):
+@dataclass
+class Rates():
     """Probabilities associated with a given vulnerability"""
     probingDetectionRate: Probability = 0.0
     exploitDetectionRate: Probability = 0.0
     successRate: Probability = 1.0
+
+    def encode(self):
+        return dataclasses.asdict(self)
 
 
 class VulnerabilityType(str, Enum):
@@ -178,7 +183,7 @@ class ExploitFailed(VulnerabilityOutcome):
     """This is for situations where the exploit fails """
 
 
-@dataclass
+@dataclass(frozen=True)
 class CachedCredential():
     """Encodes a machine-port-credential triplet"""
     node: NodeID
@@ -409,20 +414,19 @@ class Environment(NamedTuple):
         node_info: NodeInfo = self.network.nodes[node_id]['data']
         return node_info
 
+    def get_graph(self):
+        return self.network
+
     def get_nodes(self):
         """Retrieve info for all nodes"""
-        data = self.get_data()
+        nodes = self.network.nodes
+        data = {node: nodes[node]["data"] for node in nodes}
         return json.dumps(data, default=lambda x: x.encode())
 
     def deserialize(self):
         serialized = self.get_nodes()
         deserialized = json.loads(serialized)
         print(deserialized)
-
-    def get_data(self):
-        nodes = self.network.nodes
-        return {node: nodes[node]["data"] for node in nodes}
-        # return json.dumps(list(self.network.nodes(data=True)))
 
     def plot_environment_graph(self) -> None:
         """Plot the full environment graph"""
@@ -630,6 +634,27 @@ def assign_random_labels(
     return graph
 
 
+def remove_node(
+        graph: nx.Graph,
+        node_id: str) -> str:
+    """remove node and update graph model"""
+    graph.remove_node(node_id)
+    # update id in outcomes
+    for _, nodeinfo in graph.nodes(data="data"):
+        for vulnerability in nodeinfo.vulnerabilities.values():
+            # remove node in leaked nodes
+            nodes = getattr(vulnerability.outcome, "nodes", [])
+            for node_index, node in enumerate(nodes):
+                if node == node_id:
+                    nodes.pop(node_index)
+            # remove node in leaked credentials
+            credentials = getattr(vulnerability.outcome, "credentials", [])
+            for credential_index, credential in enumerate(credentials):
+                if credential.node == node_id:
+                    credentials.pop(credential_index)
+    return "removed node: {}".format(node_id)
+
+
 def update_node(
         graph: nx.Graph,
         updated_node: str) -> str:
@@ -637,12 +662,16 @@ def update_node(
 
     # convert node IDs to string
     frontend_node = json.loads(updated_node)
+    node_id = str(frontend_node["name"])
+
+    # check if node exists
+    if not graph.has_node(node_id):
+        handle_new_node(graph, node_id)
+
+    server_node = graph.nodes[node_id].get("data")
 
     # update node name
     handle_node_name_update(graph, frontend_node)
-
-    node_id = str(frontend_node["name"])
-    server_node = graph.nodes[node_id].get("data")
 
     # update value if it changes
     new_value = int(frontend_node["value"])
@@ -651,61 +680,89 @@ def update_node(
     else:
         return "value not in range 0 to 100"
 
-    # TODO: update services
+    # update agent installed
+
+    server_node.agent_installed = frontend_node["agent_installed"]
+
+    # update services
+    frontend_services = frontend_node["services"]
+    server_node.services = [ListeningService(service["name"], service["allowedCredentials"], service["running"]) for service in frontend_services]
+
+    # update properties
+    server_node.properties = frontend_node["properties"]
 
     # update vulnerabilities
     handle_vulnerability_update(server_node, frontend_node)
 
-    # server_node = frontend_node[]
-    # server_node = graph.nodes[node].get("data")
-    # server_node.value = value
+    # update firewall rules
+    handle_firewall_update(server_node, frontend_node)
     return "updated node"
 
 
-def handle_node_name_update(graph, frontend_node):
+def handle_new_node(graph: nx.Graph,
+                    node_id: str):
+    # node info data will be corrected by the other handler functions
+    node_info = NodeInfo(
+        services=[],
+        value=0,
+        properties=[],
+        firewall=FirewallConfiguration(
+            incoming=[],
+            outgoing=[]))
+    graph.add_node(node_id, data=node_info)
+
+
+def handle_node_name_update(graph: nx.Graph,
+                            frontend_node):
     # aquire node id from json
     new_node_id = str(frontend_node["name"])
     old_node_id = frontend_node["serverId"]
-    # retrive node data from graph object
-    print(new_node_id)
-    print(old_node_id)
     # update id if it changes
     if new_node_id != old_node_id:
         graph = nx.relabel_nodes(graph, {old_node_id: new_node_id}, copy=False)  # in-place modification
         # update id in outcomes
         for _, nodeinfo in graph.nodes(data="data"):
             for vulnerability in nodeinfo.vulnerabilities.values():
-                # change name in outcome nodes
-                for node_index, node in enumerate(vulnerability.outcome.nodes):
+                # change name in leaked nodes
+                nodes = getattr(vulnerability.outcome, "nodes", [])
+                for node_index, node in enumerate(nodes):
                     if node == old_node_id:
-                        vulnerability.outcome.nodes[node_index] = new_node_id
-                # change name in outcome credentials
-                for credential in vulnerability.outcome.credentials:
+                        nodes[node_index] = new_node_id
+                # change name in leaked credentials
+                credentials = getattr(vulnerability.outcome, "credentials", [])
+                for credential_index, credential in enumerate(credentials):
                     if credential.node == old_node_id:
-                        credential.node = new_node_id
+                        credentials[credential_index] = CachedCredential(new_node_id, credential.port, credential.credential)
         print("node {} id changed to {}!".format(old_node_id, new_node_id))
 
 
 def handle_vulnerability_update(server_node, frontend_node):
     # update vulnerabilities in local (server) model based on remote (frontend) model
+    frontend_vulnerability_ids = set()
     for vulnerability in frontend_node["vulnerabilities"].values():
-        frontend_vulnerability_id = vulnerability["id"]
         server_vulnerability_id = vulnerability["serverId"]
+        frontend_vulnerability_id = vulnerability["id"]
+        frontend_vulnerability_ids.add(frontend_vulnerability_id)
         # check if vulnerability is new
         if server_vulnerability_id not in server_node.vulnerabilities:
             handle_new_vulnerability(vulnerability, server_node, server_vulnerability_id)
         else:
             # check if there's a name change
             if frontend_vulnerability_id != server_vulnerability_id:
+                print("name change")
                 del server_node.vulnerabilities[server_vulnerability_id]
 
             # replace with new, updated vulnerability
             handle_new_vulnerability(vulnerability, server_node, frontend_vulnerability_id)
 
+    # check for removed vulnerabilities
+    for vulnerability in list(server_node.vulnerabilities):
+        if vulnerability not in frontend_vulnerability_ids:
+            del server_node.vulnerabilities[vulnerability]
 
-def handle_new_vulnerability(vulnerability, server_node, server_vulnerability_id):
+
+def handle_new_vulnerability(vulnerability, server_node, vulnerability_id):
     frontend_outcome = vulnerability["outcome"]
-    server_outcome = VulnerabilityOutcome()
 
     if "nodes" in frontend_outcome:
         nodes = frontend_outcome.get("nodes")
@@ -724,10 +781,33 @@ def handle_new_vulnerability(vulnerability, server_node, server_vulnerability_id
     elif "customer_data" in frontend_outcome:
         server_outcome = CustomerData()
 
-    server_node.vulnerabilities[server_vulnerability_id] = VulnerabilityInfo(
+    else:
+        raise Exception("Outcome not supported")
+
+    server_node.vulnerabilities[vulnerability_id] = VulnerabilityInfo(
         description=vulnerability["description"],
         type=VulnerabilityType(vulnerability["type"]),
-        outcome=server_outcome)
+        outcome=server_outcome,
+        precondition=Precondition(vulnerability["precondition"]),
+        rates=Rates(probingDetectionRate=float(vulnerability["rates"]["probingDetectionRate"]),
+                    exploitDetectionRate=float(vulnerability["rates"]["exploitDetectionRate"]),
+                    successRate=float(vulnerability["rates"]["successRate"])),
+        URL=vulnerability["URL"],
+        cost=float(vulnerability["cost"]),
+        reward_string=vulnerability["reward_string"])
+
+
+def handle_firewall_update(server_node, frontend_node):
+    frontend_firewall = frontend_node["firewall"]
+    frontend_outgoing_rules = frontend_firewall["outgoing"]
+    frontend_incoming_rules = frontend_firewall["incoming"]
+    server_node.firewall = FirewallConfiguration(
+        outgoing=[
+            FirewallRule(port=rule["port"], permission=RulePermission(rule["permission"]), reason=rule["reason"])
+            for rule in frontend_outgoing_rules],
+        incoming=[
+            FirewallRule(port=rule["port"], permission=RulePermission(rule["permission"]), reason=rule["reason"])
+            for rule in frontend_incoming_rules])
 
 # Serialization
 
