@@ -502,6 +502,7 @@ def collect_ports_from_nodes(
         vulnerability_library: VulnerabilityLibrary) -> List[PortName]:
     """Collect and return all port names used in a given set of nodes
     and global vulnerability library"""
+    nodes = list(nodes)  # allows iterating over nodes multiple times
     return sorted(list({
         port
         for _, v in vulnerability_library.items()
@@ -511,10 +512,18 @@ def collect_ports_from_nodes(
         for _, node_info in nodes
         for _, v in node_info.vulnerabilities.items()
         for port in collect_ports_from_vuln(v)
-    }.union(
-        {service.name
-         for _, node_info in nodes
-         for service in node_info.services}))))
+    }.union({
+        service.name
+        for _, node_info in nodes
+        for service in node_info.services
+    }.union(({
+        firewall_rule.port
+        for _, node_info in nodes
+        for firewall_rule in node_info.firewall.outgoing
+    }.union(({
+        firewall_rule.port
+        for _, node_info in nodes
+        for firewall_rule in node_info.firewall.incoming}))))))))
 
 
 def collect_ports_from_environment(environment: Environment) -> List[PortName]:
