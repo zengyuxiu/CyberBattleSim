@@ -438,18 +438,7 @@ class Environment(NamedTuple):
                 cmap=plt.cm.Oranges)  # type:ignore
 
         # plt.savefig("temp/simple_path.png") # save as png
-        # plt.show() # display
-        # data = json_graph.node_link_data(self.network)
-
-    # def get_yaml(self) -> None:
-    #     """Plot the full environment graph"""
-    #     return yaml.safe_dump(self)
-
-    # def get_json(self) -> None:
-    #     """Plot the full environment graph"""
-    #     setup_yaml_serializer()
-    #     data = json.dumps(yaml.safe_load(yaml.dump(self)))
-    #     return data
+        plt.show()  # display
 
 
 def create_network(nodes: Dict[NodeID, NodeInfo]) -> nx.DiGraph:
@@ -530,6 +519,8 @@ def collect_ports_from_environment(environment: Environment) -> List[PortName]:
     """Collect and return all port names used in a given environment"""
     return collect_ports_from_nodes(environment.nodes(), environment.vulnerability_library)
 
+# TODO: Broken; iterators may only be used once, make pull request
+
 
 def infer_constants_from_nodes(
         nodes: Iterator[Tuple[NodeID, NodeInfo]],
@@ -542,6 +533,20 @@ def infer_constants_from_nodes(
             nodes, vulnerabilities, VulnerabilityType.LOCAL),
         remote_vulnerabilities=collect_vulnerability_ids_from_nodes_bytype(
             nodes, vulnerabilities, VulnerabilityType.REMOTE)
+    )
+
+
+def infer_constants_from_environment(
+        env: Environment,
+        vulnerabilities: Dict[VulnerabilityID, VulnerabilityInfo]) -> Identifiers:
+    """Infer global environment constants from a given network"""
+    return Identifiers(
+        properties=collect_properties_from_nodes(env.nodes()),
+        ports=collect_ports_from_nodes(env.nodes(), vulnerabilities),
+        local_vulnerabilities=collect_vulnerability_ids_from_nodes_bytype(
+            env.nodes(), vulnerabilities, VulnerabilityType.LOCAL),
+        remote_vulnerabilities=collect_vulnerability_ids_from_nodes_bytype(
+            env.nodes(), vulnerabilities, VulnerabilityType.REMOTE)
     )
 
 
