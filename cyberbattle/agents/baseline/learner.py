@@ -316,7 +316,7 @@ def epsilon_greedy_search(
 
         loss_string = learner.loss_as_string()
         if loss_string:
-            loss_string = "loss={loss_string}"
+            loss_string = f"loss={loss_string}"
 
         if episode_ended_at:
             print(f"  Episode {i_episode} ended at t={episode_ended_at} {loss_string}")
