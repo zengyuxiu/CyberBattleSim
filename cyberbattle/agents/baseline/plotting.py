@@ -132,7 +132,7 @@ def plot_all_episodes_loss(all_episodes_losses, name, label):
 
 
 def running_mean(x, size):
-    """return moving average of x for a window of lenght 'size'"""
+    """return moving average of x for a window of length 'size'"""
     cumsum = np.cumsum(np.insert(x, 0, 0))
     return (cumsum[size:] - cumsum[:-size]) / float(size)
 
@@ -153,18 +153,20 @@ class PlotTraining:
         plt.title('Training...')
         plt.xlabel('Episode')
         plt.ylabel('Duration')
-        plt.title(self.title, fontsize=12)
+        plt.title(self.title, fontsize=8)
 
         episodes = [i + 1 for i in range(len(self.episode_durations))]
-        plt.plot(episodes, durations_t)
+        plt.plot(episodes, durations_t, label="individual episodes")
         # plot episode running averages
         if len(durations_t) >= average_window:
             means = running_mean(durations_t, average_window)
             means = np.concatenate((np.zeros(average_window - 1), means))
-            plt.plot(episodes, means)
+            plt.plot(episodes, means, label="window size {} running mean".format(average_window))
 
         # display.display(plt.gcf())
-        plt.show()
+        plt.legend(loc="upper right")
+        # plt.show()
+        plt.savefig("iframe_figures/episode_images/episode_" + str((len(self.episode_durations))) + ".png")
 
     def episode_done(self, length):
         self.episode_durations.append(length)
@@ -174,7 +176,6 @@ class PlotTraining:
     def plot_end(self):
         self.plot_durations()
         plt.ioff()  # type: ignore
-        # plt.show()
 
 
 def length_of_all_episodes(run):
