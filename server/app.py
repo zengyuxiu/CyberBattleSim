@@ -1,11 +1,14 @@
 
+from cyberbattle._env.cyberbattle_env import AttackerGoal
 import cyberbattle.simulation.model as model
 import cyberbattle.simulation.commandcontrol as commandcontrol
 import json
+import os
 import logging
 
-from flask import Flask, request
+from flask import Flask, request, send_from_directory
 from LogStream import LogStreamHandler
+from server.simulator import run_simulation
 
 import cyberbattle.samples.toyctf.toy_ctf as ctf
 
@@ -17,13 +20,11 @@ network = model.create_network(ctf.nodes)
 env = model.Environment(network=network, vulnerability_library=dict([]), identifiers=ctf.ENV_IDENTIFIERS)
 c = commandcontrol.CommandControl(env)
 
-c.plot_nodes()
+# c.plot_nodes()
 # print("Nodes disovered so far: " + str(c.list_nodes()))
 starting_node = c.list_nodes()[0]['id']
 
 dbg = commandcontrol.EnvironmentDebugging(c)
-
-env.plot_environment_graph()
 
 # set up logging
 log_stream = LogStreamHandler()
@@ -47,13 +48,13 @@ class Respone():
 
 def reset_environment():
     global env, c, dbg, log_stream, cached_rewards
-    env = model.Environment(network=network, vulnerability_library=dict([]), identifiers=ctf.ENV_IDENTIFIERS)
+    identifiers = model.infer_constants_from_environment(env, {})
+    env = model.Environment(network=network, vulnerability_library=dict([]), identifiers=identifiers)
     c = commandcontrol.CommandControl(env)
     dbg = commandcontrol.EnvironmentDebugging(c)
     log_stream = LogStreamHandler()
     cyberbattle_logger.addHandler(log_stream)
     cached_rewards = []
-    print(env.identifiers)
 
 
 @ app.route("/")
@@ -188,6 +189,37 @@ def remove_node():
     result = model.remove_node(network, node_id)
     reset_environment()
     return result
+
+# SIMULATION
+
+
+@ app.route("/api/run_learning_simulation", methods=['POST'])
+def run_learning_simulation():
+    reset_environment()
+    form = request.form
+    simulation_parameters = json.loads(form["simulation_parameters"])
+    learner = run_simulation(env, simulation_parameters)
+    last_episode_rewards = learner.get("all_episodes_rewards")[-1]
+    last_episode_positive_reward_count = len([reward for reward in last_episode_rewards if reward > 0])
+    # return reward figures count
+    return json.dumps(last_episode_positive_reward_count)
+
+
+@ app.route("/api/simulation_iframe")
+def simulation_result():
+    return send_from_directory('../iframe_figures', 'figure_0.html')
+
+
+@ app.route("/api/episode_image_<episode_number>")
+def episode_image(episode_number):
+    path = 'episode_' + episode_number + '.png'
+    return send_from_directory('../iframe_figures/episode_images', path)
+
+
+@ app.route("/api/reward_image_e<episode_number>_<reward_number>")
+def reward_image(episode_number, reward_number):
+    path = 'step-e' + episode_number + '-' + reward_number + '.png'
+    return send_from_directory('../iframe_figures/reward_images', path)
 
 
 if __name__ == "__main__":
