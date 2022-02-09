@@ -1,16 +1,15 @@
 
-from cyberbattle._env.cyberbattle_env import AttackerGoal
-import cyberbattle.simulation.model as model
-import cyberbattle.simulation.commandcontrol as commandcontrol
 import json
-import os
 import logging
+import sys
 
 from flask import Flask, request, send_from_directory
 from LogStream import LogStreamHandler
-from server.simulator import run_simulation
 
 import cyberbattle.samples.toyctf.toy_ctf as ctf
+import cyberbattle.simulation.commandcontrol as commandcontrol
+import cyberbattle.simulation.model as model
+from server.simulator import run_simulation
 
 app = Flask(__name__)
 
@@ -32,6 +31,8 @@ log_stream = LogStreamHandler()
 logging.basicConfig(level=logging.INFO)
 cyberbattle_logger = logging.getLogger("cyberbattlesim")
 cyberbattle_logger.addHandler(log_stream)
+logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(levelname)s: %(message)s")
+
 
 # set up reward caching
 cached_rewards = []

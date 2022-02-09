@@ -18,9 +18,6 @@ from cyberbattle.simulation.model import Environment, NodeInfo
 import cyberbattle.simulation.model as model
 
 
-logging.basicConfig(stream=sys.stdout, level=logging.ERROR, format="%(levelname)s: %(message)s")
-
-
 def count_credentials(node: NodeInfo):
     count = 0
     for vulnerability in node.vulnerabilities.values():
