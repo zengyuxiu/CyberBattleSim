@@ -59,7 +59,8 @@ Read the [Quick introduction](/docs/quickintro.md) to the project.
 
 ## Benchmark
 
-See [Benchmark](/docs/benchmark.md).
+See [Benchmark documentation](/docs/benchmark.md).
+Jupyter notebooks with the latest runs are checked-in under a dedicated tag at [/notebooks/benchmarks (latest_benchmark)](https://github.com/microsoft/CyberBattleSim/tree/latest_benchmark/notebooks/benchmarks).
 
 ## Setting up a dev environment
 
@@ -72,20 +73,40 @@ Start by checking out the repository:
    git clone https://github.com/microsoft/CyberBattleSim.git
    ```
 
-### On Linux or WSL
+### OS components
 
-The instructions were tested on a Linux Ubuntu distribution (both native and via WSL). Run the following command to set-up your dev environment and install all the required dependencies (apt and pip packages):
-
-```bash
-./init.sh
+If you get the following error when running the papermill on the notebooks
+(or alternatively when running `orca --help`)
+```
+/home/wiblum/miniconda3/envs/cybersim/lib/orca_app/orca: error while loading shared libraries: libXss.so.1: cannot open shared object file: No such file or directory
+```
+or other share libraries like `libgdk_pixbuf-2.0.so.0`,
+Then run the following command:
+```
+sudo apt install libnss3-dev libgtk-3-0 libxss1 libasound2-dev libgtk2.0-0 libgconf-2-4
 ```
 
-The script installs python3.8 if not present. If you are running a version of Ubuntu older than 20, it will automatically add an additional apt repository to install python3.8.
+### On Linux or WSL
 
-The script will create a [virtual Python environment](https://docs.python.org/3/library/venv.html) under a `venv` subdirectory, you can then
-run Python with `venv/bin/python`.
+The instructions were tested on a Linux Ubuntu distribution (both native and via WSL).
 
-> Note: If you prefer Python from a global installation instead of a virtual environment then you can skip the creation of the virtual environment by running the script with `./init.sh -n`. This will instead install all the Python packages on a system-wide installation of Python 3.8.
+If conda is not installed already, you need to install it by running the `install_conda.sh` script.
+
+```bash
+bash install-conda.sh
+```
+
+Once this is done, open a new terminal and run the initialization script:
+```bash
+bash init.sh
+```
+This will create a conda environmen named `cybersim` with all the required OS and python dependencies.
+
+To activate the environment run:
+
+```bash
+conda activate cybersim
+```
 
 #### Windows Subsystem for Linux
 
@@ -113,7 +134,7 @@ To run your environment within a docker container, we recommend running `docker`
 
 This method is not maintained anymore, please prefer instead running under
 a WSL subsystem Linux environment.
-But if you insist you want to start by installing [Python 3.8](https://www.python.org/downloads/windows/) then in a Powershell prompt run the `./init.ps1` script.
+But if you insist you want to start by installing [Python 3.9](https://www.python.org/downloads/windows/) then in a Powershell prompt run the `./init.ps1` script.
 
 ## Getting started quickly using Docker
 
@@ -132,22 +153,24 @@ The quickest method to get up and running is via the Docker container.
 commit=7c1f8c80bc53353937e3c69b0f5f799ebb2b03ee
 docker login spinshot.azurecr.io
 docker pull spinshot.azurecr.io/cyberbattle:$commit
-docker run -it spinshot.azurecr.io/cyberbattle:$commit cyberbattle/agents/baseline/run.py
+docker run -it spinshot.azurecr.io/cyberbattle:$commit python -m cyberbattle.agents.baseline.run
 ```
 
 ### Recreating the Docker image
 
 ```bash
 docker build -t cyberbattle:1.1 .
-docker run -it -v "$(pwd)":/source --rm cyberbattle:1.1 cyberbattle/agents/baseline/run.py
+docker run -it -v "$(pwd)":/source --rm cyberbattle:1.1 python -m cyberbattle.agents.baseline.run
 ```
 
 ## Check your environment
 
-Run the following command to run a simulation with a baseline RL agent:
+Run the following commands to run a simulation with a baseline RL agent:
 
 ```bash
-python cyberbattle/agents/baseline/run.py --training_episode_count 1 --eval_episode_count 1 --iteration_count 10 --rewardplot_with 80  --chain_size=20 --ownership_goal 1.0
+python -m cyberbattle.agents.baseline.run --training_episode_count 5 --eval_episode_count 3 --iteration_count 100 --rewardplot_width 80  --chain_size=4 --ownership_goal 0.2
+
+python -m cyberbattle.agents.baseline.run --training_episode_count 5 --eval_episode_count 3 --iteration_count 100 --rewardplot_width 80  --chain_size=4 --reward_goal 50 --ownership_goal 0
 ```
 
 If everything is setup correctly you should get an output that looks like this:
@@ -183,37 +206,41 @@ Cumulative rewards -- DQN=Red, Random=Green
 
 ## Jupyter notebooks
 
-To quickly get familiar with the project, you can open one of the provided Jupyter notebooks to play interactively with
-the gym environments. Just start jupyter with `jupyter notebook`, or
-`venv/bin/jupyter notebook` if you are using a virtual environment setup.
+To quickly get familiar with the project, you can open one of the provided Jupyter notebooks to play interactively with the gymnasium environments.
+
+> Notes on the `.py` notebooks:
+> - Our notebooks are checked-in in Git as `.py` files. Those can be opened and run directly  in VSCode or in Jupyter using the [Jupytext extension](https://jupytext.readthedocs.io/en/latest/install.html).
+> - The output `.ipynb` files can also be automatically regenerated using [papermill](https://pypi.org/project/papermill/) by running the bash script [run_benchmark.sh](/notebooks/run_benchmark.sh).
+> - We also publish a snapshot of the corresponding `.ipynb`-notebooks with the entire output and plots in a separate git tag.
+The latest snapshot of the Jupyter notebooks output, including the benchmarks, are
+accessible from the following git tag: [/notebooks/benchmarks (latest_benchmark)](https://github.com/microsoft/CyberBattleSim/tree/latest_benchmark/notebooks/benchmarks).
+
+
+Some notebooks to get started:
 
 - 'Capture The Flag' toy environment notebooks:
-  - [Random agent](notebooks/toyctf-random.ipynb)
-  - [Interactive session for a human player](notebooks/toyctf-blank.ipynb)
-  - [Interactive session - fully solved](notebooks/toyctf-solved.ipynb)
+  - [Random agent](notebooks/toyctf-random.py)
+  - [Interactive session for a human player](notebooks/toyctf-blank.py)
+  - [Interactive session - fully solved](notebooks/toyctf-solved.py)
 
 - Chain environment notebooks:
-  - [Random agent](notebooks/chainnetwork-random.ipynb)
+  - [Random agent](notebooks/chainnetwork-random.py)
 
 - Other environments:
-  - [Interactive session with a randomly generated environment](notebooks/randomnetwork.ipynb)
-  - [Random agent playing on randomly generated networks](notebooks/c2_interactive_interface.ipynb)
+  - [Interactive session with a randomly generated environment](notebooks/randomnetwork.py)
+  - [Random agent playing on randomly generated networks](notebooks/c2_interactive_interface.py)
 
-- Benchmarks:
+- Benchmarks:   The following notebooks show benchmark evaluation of the baseline agents on various environments.
 
-  The following notebooks show benchmark evaluation of the baseline agents on various environments.
+    - [Benchmarking on a given environment](notebooks/notebook_benchmark.py)
+    - [Benchmark on chain environments with a basic defender](notebooks/notebook_withdefender.py)
+    - [DQL transfer learning evaluation](notebooks/notebook_dql_transfer.py)
+    - [Epsilon greedy with credential lookups](notebooks/notebook_randlookups.py)
+    - [Tabular Q Learning](notebooks/notebook_tabularq.py)
 
-  > The source `.py`-versions of the notebooks are best viewed in VSCode or in Jupyter with the [Jupytext extension](https://jupytext.readthedocs.io/en/latest/install.html).
-  The `notebooks` folder contains the corresponding `.ipynb`-notebooks
-  with the entire output and plots. These can be regenerated via [papermill](https://pypi.org/project/papermill/) using this [bash script](cyberbattle/agents/baseline/notebooks/runall.sh)
-  .
+The latest snapshot of the Jupyter notebooks output, including the benchmarks, are
+accessible from the following git tag: [/notebooks/benchmarks (latest_benchmark)](https://github.com/microsoft/CyberBattleSim/tree/latest_benchmark/notebooks/benchmarks).
 
-    - Benchmarking on a given environment: [source](cyberbattle/agents/baseline/notebooks/notebook_benchmark.py): [output (Chain)](notebooks/notebook_benchmark-chain.ipynb), [output (Capture the flag)](notebooks/notebook_benchmark-toyctf.ipynb)
-    - Benchmark on chain environments with a basic defender: [source](cyberbattle/agents/baseline/notebooks/notebook_withdefender.py),
-    [output](notebooks/notebook_withdefender.ipynb);
-    - DQL transfer learning evaluation: [source](cyberbattle/agents/baseline/notebooks/notebook_dql_transfer.py), [output](notebooks/notebook_dql_transfer.ipynb);
-    - Epsilon greedy with credential lookups: [source](cyberbattle/agents/baseline/notebooks/notebook_randlookups.py), [output](notebooks/notebook_randlookups.ipynb);
-    - Tabular Q Learning: [source](cyberbattle/agents/baseline/notebooks/notebook_tabularq.py); [output](notebooks/notebook_tabularq.ipynb)
 
 ## How to instantiate the Gym environments?
 

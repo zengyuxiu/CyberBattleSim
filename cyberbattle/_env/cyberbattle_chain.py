@@ -12,10 +12,8 @@ class CyberBattleChain(cyberbattle_env.CyberBattleEnv):
 
     def __init__(self, size, **kwargs):
         self.size = size
-        super().__init__(
-            initial_environment=chainpattern.new_environment(size),
-            **kwargs)
+        super().__init__(initial_environment=chainpattern.new_environment(size), **kwargs)
 
-    @ property
+    @property
     def name(self) -> str:
         return f"CyberBattleChain-{self.size}"

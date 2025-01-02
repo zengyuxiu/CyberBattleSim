@@ -1,13 +1,14 @@
 {
     "exclude": [
-        "**/.ipynb_checpoints",
+        "**/.ipynb_checkpoints",
         "**/__pycache__",
+        "**/outputs/**",
         "typings",
         "venv"
     ],
-    "ignore": [
-        "cyberbattle/__init__.py",
-        "cyberbattle/agents/__init__.py"
+    "ignore": [],
+    "typeshedPaths": [
+        "typings"
     ],
     "reportMissingImports": true,
     "reportMissingTypeStubs": true,
@@ -17,6 +18,8 @@
     "reportDuplicateImport": "warning",
     "reportUnnecessaryCast": "warning",
     "reportUndefinedVariable": "error",
+    "reportIncompatibleMethodOverride": "warning",
+    "reportIncompatibleVariableOverride": "information",
     "strictParameterNoneValue": true,
     "strict": []
 }
