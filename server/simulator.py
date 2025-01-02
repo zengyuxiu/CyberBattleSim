@@ -13,7 +13,7 @@ import cyberbattle.agents.baseline.learner as learner
 from cyberbattle._env.cyberbattle_env import AttackerGoal, DefenderGoal
 from gym.envs.registration import registry
 from cyberbattle.samples.toyctf import toy_ctf
-from cyberbattle import register
+from cyberbattle import register,EnvSpec
 from cyberbattle.simulation.model import Environment, NodeInfo
 import cyberbattle.simulation.model as model
 
@@ -27,9 +27,9 @@ def count_credentials(node: NodeInfo):
 
 
 def run_simulation(env: Environment, simulation_parameters: dict) -> TrainedLearner:
-    if 'AppSimulation-v0' in registry.env_specs:
+    if 'AppSimulation-v0' in registry:
         print("deleted registry")
-        del registry.env_specs['AppSimulation-v0']
+        del registry['AppSimulation-v0']
 
     register(
         id='AppSimulation-v0',

@@ -4,12 +4,12 @@ import logging
 import sys
 
 from flask import Flask, request, send_from_directory
-from LogStream import LogStreamHandler
+from .LogStream import LogStreamHandler
 
 import cyberbattle.samples.toyctf.toy_ctf as ctf
 import cyberbattle.simulation.commandcontrol as commandcontrol
 import cyberbattle.simulation.model as model
-from server.simulator import run_simulation
+from .simulator import run_simulation
 
 app = Flask(__name__)
 
