@@ -64,6 +64,8 @@ CredentialID = str
 # Intrinsic value of a reaching a given node in [0,100]
 NodeValue = int
 
+# Intrinsic value of a reaching a given edge in [0,100]
+EdgeValue = int
 
 PortName = str
 
@@ -383,6 +385,28 @@ class NodeInfo:
     def encode(self):
         return dataclasses.asdict(self)
 
+class LinkStatus(Enum):
+    """Link running status"""
+
+    Stopped = 0
+    Running = 1
+
+@dataclass
+class EdgeInfo:
+    """A Computer network edge in the enterprise network"""
+
+    # Intrinsic value of the edge (translates into a reward if the node gets owned)
+    value: EdgeValue = 0
+    # Properties of the edge, some of which can imply further vulnerabilities
+    properties: List[PropertyName] = dataclasses.field(default_factory=list)
+    # Link status: running or stopped
+    status = LinkStatus.Running
+    # Relative edge weight used to calculate the cost of stopping this edge
+    # or its services
+    sla_weight: float = 1.0
+
+    def encode(self):
+        return dataclasses.asdict(self)
 
 class Identifiers(NamedTuple):
     """Define the global set of identifiers used
@@ -435,6 +459,18 @@ class Environment:
         node_info: NodeInfo = self.network.nodes[node_id]["data"]
         return node_info
 
+    def get_edge(self,src_node_id:NodeID,dst_node_id:NodeID,default=None) -> EdgeInfo:
+        """Retrieve info for the edge with the specified Source and Dstination Node ID"""
+        try:
+            edge_info = self.network[src_node_id][dst_node_id]
+        except KeyError:
+            try:
+                edge_info = self.network[dst_node_id][src_node_id]
+            except KeyError:
+                edge_info = default
+        return edge_info
+
+
     def get_graph(self):
         return self.network
 
@@ -443,9 +479,23 @@ class Environment:
         nodes = self.network.nodes
         data = {node: nodes[node]["data"] for node in nodes}
         return json.dumps(data, default=lambda x: x.encode())
+    
+    def get_edges(self):
+        """Retrieve info for all edges"""
+        edges = self.network.edges
+        data = {}
+        for source, target,edgeInfo in edges(data="data") :
+            if source not in data:
+                data[source] = {}
+            data[source][target] = edgeInfo
+        return json.dumps(data,default=lambda x: x.encode())
 
     def deserialize(self):
         serialized = self.get_nodes()
+        deserialized = json.loads(serialized)
+        print(deserialized)
+
+        serialized = self.get_edges()
         deserialized = json.loads(serialized)
         print(deserialized)
 

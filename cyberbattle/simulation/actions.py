@@ -133,7 +133,7 @@ class AgentActions:
     This is the AgentActions class. It interacts with and makes changes to the environment.
     """
 
-    def __init__(self, environment: model.Environment, throws_on_invalid_actions=True):
+    def __init__(self, environment: model.Environment, throws_on_invalid_actions=True,consider_three_layer_network_connections=True):
         """
             AgentActions Constructor
 
@@ -146,6 +146,7 @@ class AgentActions:
         self._gathered_credentials: Set[model.CredentialID] = set()
         self._discovered_nodes: "OrderedDict[model.NodeID, NodeTrackingInformation]" = OrderedDict()
         self._throws_on_invalid_actions = throws_on_invalid_actions
+        self._consider_three_layer_network_connections = consider_three_layer_network_connections
 
         # List of all special tags indicating a privilege level reached on a node
         self.privilege_tags = [model.PrivilegeEscalation(p).tag for p in list(PrivilegeLevel)]
@@ -288,6 +289,9 @@ class AgentActions:
 
         if isinstance(outcome, model.LeakedCredentials):
             for credential in outcome.credentials:
+                if self._consider_three_layer_network_connections :
+                    if self._environment.get_edge(reference_node,credential.node) is None:
+                        continue
                 if self.__mark_node_as_discovered(credential.node):
                     newly_discovered_nodes += 1
                     newly_discovered_nodes_value += self._environment.get_node(credential.node).value
@@ -301,6 +305,9 @@ class AgentActions:
 
         elif isinstance(outcome, model.LeakedNodesId):
             for node_id in outcome.nodes:
+                if self._consider_three_layer_network_connections :
+                    if self._environment.get_edge(reference_node,node_id) is None:
+                        continue
                 if self.__mark_node_as_discovered(node_id):
                     newly_discovered_nodes += 1
                     newly_discovered_nodes_value += self._environment.get_node(node_id).value
@@ -445,6 +452,13 @@ class AgentActions:
         source_node_info: model.NodeInfo = self._environment.get_node(node_id)
         target_node_info: model.NodeInfo = self._environment.get_node(target_node_id)
 
+        if self._consider_three_layer_network_connections :
+            if self._environment.get_edge(node_id,target_node_id) is None :
+                if self._throws_on_invalid_actions:
+                    raise ValueError(f"source_node {node_id} and target_node {target_node_id} are not connected at the three layers")
+                else:
+                    return ActionResult(reward=Penalty.INVALID_ACTION, outcome=None)
+
         if not source_node_info.agent_installed:
             if self._throws_on_invalid_actions:
                 raise ValueError("Agent does not owned the source node '" + node_id + "'")
@@ -547,6 +561,13 @@ class AgentActions:
         source_node = self._environment.get_node(source_node_id)
         # ensures that the source node is owned by the agent
         # and that the target node is discovered
+
+        if self._consider_three_layer_network_connections :
+            if self._environment.get_edge(source_node_id,target_node_id) is None :
+                if self._throws_on_invalid_actions:
+                    raise ValueError(f"source_node {source_node_id} and target_node {target_node_id} are not connected at the three layers")
+                else:
+                    return ActionResult(reward=Penalty.INVALID_ACTION, outcome=None)
 
         if not source_node.agent_installed:
             if self._throws_on_invalid_actions:

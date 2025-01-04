@@ -382,6 +382,7 @@ class CyberBattleEnv(CyberBattleSpaceKind):
         self._actuator = actions.AgentActions(
             self.__environment,
             throws_on_invalid_actions=self.__throws_on_invalid_actions,
+            consider_three_layer_network_connections=self.__consider_three_layer_network_connections,
         )
         self._defender_actuator = actions.DefenderAgentActions(self.__environment)
 
@@ -482,6 +483,7 @@ class CyberBattleEnv(CyberBattleSpaceKind):
         renderer="",
         observation_padding=True,
         throws_on_invalid_actions=True,
+        consider_three_layer_network_connections=True
     ):
         """Arguments
         ===========
@@ -519,6 +521,7 @@ class CyberBattleEnv(CyberBattleSpaceKind):
         self.__renderer = renderer
         self.__observation_padding = observation_padding
         self.__throws_on_invalid_actions = throws_on_invalid_actions
+        self,__consider_three_layer_network_connections = consider_three_layer_network_connections
 
         self.viewer = None
 
